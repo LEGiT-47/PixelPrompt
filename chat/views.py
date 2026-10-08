@@ -1,8 +1,11 @@
 import torch
+import mimetypes
+from pathlib import Path
 from torch import autocast
 from diffusers import StableDiffusionPipeline
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.http import FileResponse
 from .models import Chat, Image
 from .forms import ImageForm
 from io import BytesIO
@@ -13,6 +16,7 @@ from PIL import Image as PILImage
 from torchvision import transforms
 from diffusers import StableDiffusionImg2ImgPipeline
 from django.core.files.storage import default_storage
+from django.views.decorators.http import require_GET, require_POST
 
 # Ensure the file exists and delete it
 def delete_file(file_path):
@@ -114,6 +118,23 @@ def chat_detail(request, chat_id):
 
     return render(request, 'chat_detail1.html', {'chat': chat, 'images': images, 'form': form, 'chaters': chaters})
 
+
+@login_required
+@require_GET
+def image_file(request, image_id, download=False):
+    image = get_object_or_404(
+        Image.objects.select_related('chat'),
+        pk=image_id,
+        chat__user=request.user,
+    )
+    content_type = mimetypes.guess_type(image.image.name)[0] or 'application/octet-stream'
+    return FileResponse(
+        image.image.open('rb'),
+        as_attachment=download,
+        filename=Path(image.image.name).name,
+        content_type=content_type,
+    )
+
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
 from django.shortcuts import render, redirect
@@ -130,6 +151,7 @@ def register(request):
         form = UserCreationForm()
     return render(request, 'register.html', {'form': form})
 
+@require_POST
 def logout_view(request):
     logout(request)
     return redirect('login')
