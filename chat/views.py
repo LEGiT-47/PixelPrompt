@@ -1,136 +1,243 @@
-import torch
-from torch import autocast
-from diffusers import StableDiffusionPipeline
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from .models import Chat, Image
-from .forms import ImageForm
+import logging
 from io import BytesIO
+from uuid import uuid4
+
+import torch
+from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
+from django.contrib import messages
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
 from django.core.files.base import ContentFile
-from PIL import Image as PILImage
-from django.contrib.auth import logout
-from PIL import Image as PILImage
-from torchvision import transforms
-from diffusers import StableDiffusionImg2ImgPipeline
 from django.core.files.storage import default_storage
+from django.db import DatabaseError, transaction
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST, require_safe
+from PIL import Image as PILImage
+from torch import autocast
+from torchvision import transforms
 
-# Ensure the file exists and delete it
-def delete_file(file_path):
-    if default_storage.exists(file_path):
-        default_storage.delete(file_path)
-        print(f"File {file_path} deleted.")
-    else:
-        print(f"File {file_path} does not exist.")
+from .forms import ImageForm
+from .models import Chat, Image
 
+logger = logging.getLogger(__name__)
 
-# Initialize the Stable Diffusion pipeline
 model_id = "runwayml/stable-diffusion-v1-5"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+
+def delete_file(file_name):
+    """Remove a stored image without exposing storage errors to users."""
+    if not file_name:
+        return
+
+    try:
+        default_storage.delete(file_name)
+    except Exception:
+        logger.exception("Failed to remove an image file from private storage")
+
+
+def generate_image(prompt, input_image=None):
+    with autocast(device):
+        if input_image:
+            with PILImage.open(input_image) as opened_image:
+                source_image = opened_image.convert("RGB")
+
+            preprocess = transforms.Compose([
+                transforms.Resize((512, 512)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5]),
+            ])
+            input_tensor = preprocess(source_image).unsqueeze(0).to(device)
+            pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
+                model_id,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            )
+            pipeline.to(device)
+            return pipeline(
+                prompt=prompt,
+                image=input_tensor,
+                strength=0.75,
+                guidance_scale=8.5,
+            )["images"][0]
+
+        pipeline = StableDiffusionPipeline.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        )
+        pipeline.to(device)
+        return pipeline(prompt, guidance_scale=8.5)["images"][0]
+
+
+def _chat_context(chat, form, chaters, image_generation_failed=False):
+    return {
+        "chat": chat,
+        "images": chat.images.all(),
+        "form": form,
+        "chaters": chaters,
+        "image_generation_failed": image_generation_failed,
+    }
+
+
 @login_required
 def dashboard(request):
-    return redirect('chat_detail', chat_id='none')
+    return redirect("chat_detail", chat_id="none")
+
 
 @login_required
 def chat_detail(request, chat_id):
-    if(chat_id == 'none'):
-        if request.method == 'POST':
-          title = request.POST.get('title')
-          if title:
-            Chat.objects.create(title=title, user=request.user)
-            print(11)
-            return redirect('chat_detail', chat_id=title)
-        return render(request, 'chat_detail1.html', {'chaters': Chat.objects.filter(user=request.user), 'nope': "nope"})
-    
-    chat = get_object_or_404(Chat, title=chat_id, user=request.user)
-    images = chat.images.all()
-    form = ImageForm()
-    chaters = Chat.objects.filter(user=request.user) 
+    if chat_id == "none":
+        if request.method == "POST":
+            title = request.POST.get("title")
+            if title:
+                Chat.objects.create(title=title, user=request.user)
+                return redirect("chat_detail", chat_id=title)
+        return render(request, "chat_detail1.html", {
+            "chaters": Chat.objects.filter(user=request.user),
+            "nope": "nope",
+        })
 
-    if request.method == 'POST':
-        title = request.POST.get('title')
+    # Preserve the existing per-user ownership check and Django 404 behavior.
+    chat = get_object_or_404(Chat, title=chat_id, user=request.user)
+    chaters = Chat.objects.filter(user=request.user)
+    form = ImageForm()
+
+    if request.method == "POST":
+        title = request.POST.get("title")
         if title:
             Chat.objects.create(title=title, user=request.user)
-            print(11)
-            return redirect('chat_detail', chat_id=title)
+            return redirect("chat_detail", chat_id=title)
+
         form = ImageForm(request.POST, request.FILES)
         if form.is_valid():
-            # Generate image using Stable Diffusion
-            prompt = form.cleaned_data['prompt']
-            input_image = form.cleaned_data.get('input_image')
-            print(input_image)
-            strength = 0.75
-            print(2)
-            with autocast(device):
-               if input_image:  # Check if an input image is provided
-                  # Load the input image
-                  print(1)
-                  input_image = PILImage.open(input_image).convert("RGB")
-                  preprocess = transforms.Compose([
-                  transforms.Resize((512, 512)),  # Match the Stable Diffusion resolution
-                  transforms.ToTensor(),
-                  transforms.Normalize([0.5], [0.5]),  # Normalize to [-1, 1]
-                  ])
-                  input_tensor = preprocess(input_image).unsqueeze(0).to(device)
-                  pipe1 = StableDiffusionImg2ImgPipeline.from_pretrained(
-                      model_id,
-                      torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                     
-                    )
-                  pipe1.to(device)
-                  generated_image = pipe1(prompt=prompt, image=input_tensor, strength=strength, guidance_scale=8.5)["images"][0]
-               else:
-                   pipe = StableDiffusionPipeline.from_pretrained(
-                     model_id,
-                     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    
-                 )
-                   pipe.to(device)
-                   generated_image = pipe(prompt, guidance_scale=8.5)["images"][0]
-
-            # Convert PIL image to an in-memory file
+            prompt = form.cleaned_data["prompt"]
+            input_image = form.cleaned_data.get("input_image")
             image_buffer = BytesIO()
-            generated_image.save(image_buffer, format="PNG")
-            image_buffer.seek(0)
 
-            
-
-            if chat.images.count() >= 4:
-            # Get the oldest image based on `created_at`
-                 oldest_image = chat.images.order_by('created_at').first()
-
-                 # Ensure the file exists and delete it from the filesystem
-                 if oldest_image.image:
-                          delete_file(oldest_image.image.path)
-    
-                   # Delete the record from the database
-                 oldest_image.delete()
-
+            try:
+                generated_image = generate_image(prompt, input_image)
+                generated_image.save(image_buffer, format="PNG")
+                image_buffer.seek(0)
+            except Exception:
+                logger.exception("Image generation failed for chat_id=%s", chat.pk)
+                messages.error(
+                    request,
+                    "Image generation failed. We couldn't generate your image. Please try again.",
+                )
+                return render(
+                    request,
+                    "chat_detail1.html",
+                    _chat_context(chat, form, chaters, image_generation_failed=True),
+                )
 
             new_image = Image(chat=chat, prompt=prompt)
-            new_image.image.save(f"{request.user}_{chat.title}_{prompt}.png", ContentFile(image_buffer.read()), save=True)
-            new_image.save()
-            return redirect('chat_detail', chat_id=chat_id)
+            try:
+                new_image.image.save(
+                    f"{uuid4().hex}.png",
+                    ContentFile(image_buffer.getvalue()),
+                    save=False,
+                )
+                with transaction.atomic():
+                    new_image.save()
+            except (DatabaseError, OSError, ValueError):
+                logger.exception("Failed to persist generated image for chat_id=%s", chat.pk)
+                delete_file(new_image.image.name)
+                messages.error(
+                    request,
+                    "We couldn't save your generated image. Please try again.",
+                )
+                return render(
+                    request,
+                    "chat_detail1.html",
+                    _chat_context(chat, form, chaters, image_generation_failed=True),
+                )
+            except Exception:
+                logger.exception("Unexpected failure while saving image for chat_id=%s", chat.pk)
+                delete_file(new_image.image.name)
+                messages.error(
+                    request,
+                    "We couldn't save your generated image. Please try again.",
+                )
+                return render(
+                    request,
+                    "chat_detail1.html",
+                    _chat_context(chat, form, chaters, image_generation_failed=True),
+                )
 
-    return render(request, 'chat_detail1.html', {'chat': chat, 'images': images, 'form': form, 'chaters': chaters})
+            # Preserve image history; users explicitly choose which images to remove.
+            return redirect("chat_detail", chat_id=chat_id)
 
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth import login
-from django.shortcuts import render, redirect
+    return render(request, "chat_detail1.html", _chat_context(chat, form, chaters))
+
+
+@login_required
+@require_safe
+def serve_image(request, image_id):
+    """Stream image content only after verifying the requesting user's ownership."""
+    image = get_object_or_404(Image, pk=image_id, chat__user=request.user)
+    try:
+        image_file = default_storage.open(image.image.name, "rb")
+    except (FileNotFoundError, OSError, ValueError):
+        logger.exception("Stored image could not be opened for image_id=%s", image.pk)
+        raise Http404("Image not found")
+
+    response = FileResponse(
+        image_file,
+        as_attachment=request.GET.get("download") == "1",
+        filename=f"pixelprompt-image-{image.pk}.png",
+        content_type="image/png",
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@require_POST
+def delete_image(request, image_id):
+    """Delete an image only when its parent chat belongs to the current user."""
+    image = get_object_or_404(Image, pk=image_id, chat__user=request.user)
+    chat_title = image.chat.title
+    stored_name = image.image.name
+
+    try:
+        with transaction.atomic():
+            image.delete()
+    except DatabaseError:
+        logger.exception("Failed to delete image record image_id=%s", image_id)
+        messages.error(request, "We couldn't delete this image. Please try again.")
+        return redirect("chat_detail", chat_id=chat_title)
+
+    try:
+        default_storage.delete(stored_name)
+    except Exception:
+        # The database record is gone, so this orphan cannot be retrieved through the
+        # authenticated image route. Log for storage cleanup without leaking details.
+        logger.exception("Failed to remove deleted image file image_id=%s", image_id)
+        messages.warning(request, "The image was removed, but its stored file could not be cleaned up.")
+    else:
+        messages.success(request, "Image deleted.")
+
+    return redirect("chat_detail", chat_id=chat_title)
+
 
 def register(request):
-    if request.method == 'POST':
+    if request.method == "POST":
         form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)  # Automatically log in the user after registration
-            Chat.objects.create(title="First_Chat", user=request.user)
-            return redirect('dashboard')
+            login(request, user)
+            Chat.objects.create(title="First_Chat", user=user)
+            return redirect("dashboard")
     else:
         form = UserCreationForm()
-    return render(request, 'register.html', {'form': form})
+    return render(request, "register.html", {"form": form})
 
+
+@login_required
+@require_POST
 def logout_view(request):
     logout(request)
-    return redirect('login')
+    return redirect("login")
 
