@@ -106,9 +106,12 @@
                                 <span data-id="r8XW" class="text-white font-medium">{{ user.username|slice:":1" }}</span>
                             </div>
                             <span data-id="biwZ" class="text-neutral-300">{{ user.username }}</span>
-                            <a href="{% url 'logout' %}" class="ml-auto text-neutral-300 hover:text-white">
+                            <form method="post" action="{% url 'logout' %}" class="ml-auto">
+                                {% csrf_token %}
+                                <button type="submit" class="text-neutral-300 hover:text-white">
                                 <span class="material-symbols-outlined">logout</span>
-                            </a>
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -190,10 +193,10 @@
                                     <div data-id="w6Y1" class="bg-primary-100 px-4 py-3 rounded-xl rounded-tr-none max-w-[80%]" style=" max-width:350px;">
                                        {% comment %} <p>Here is the image :</p> {% endcomment %}
                                         <div>
-                                            <img src="{{ image.image.url }}" alt="Generated Image" style="margin:5px;" onload="hideLoading()">
+                                            <img src="{% url 'image_file' image.id %}" alt="Generated Image" style="margin:5px;" onload="hideLoading()">
                                         </div>
                                         <div data-id="z9dt" class="flex justify-end mt-2 space-x-2">
-                                            <a href="{{ image.image.url }}" download class="rounded hover:bg-neutral-200 transition duration-200">
+                                            <a href="{% url 'image_download' image.id %}" class="rounded hover:bg-neutral-200 transition duration-200">
                                                 <span data-id="buRQ" class="material-symbols-outlined text-neutral-500">download</span>
                                             </a>
                                             <button data-id="bz-Z" class="rounded hover:bg-neutral-200 transition duration-200">
