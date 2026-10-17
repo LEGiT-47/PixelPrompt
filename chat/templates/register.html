@@ -1,13 +1,32 @@
-{% extends 'base.html' %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create account — PixelPrompt</title>
+  <link rel="stylesheet" href="{% static 'chat/styles.css' %}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
 
-{% block content %}
-<div class="register-container">
-    <h2>Register</h2>
+    <div class="auth-logo">
+      <span class="auth-logo-dot"></span>
+      <span class="auth-logo-name">PixelPrompt</span>
+    </div>
+
+    <h1 class="auth-heading">Create your account</h1>
+    <p class="auth-sub">Start generating images in seconds.</p>
+
     <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="register-button">Register</button>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn-auth">Create account</button>
     </form>
-    <p>Already have an account? <a href="{% url 'login' %}">Login here</a></p>
+
+    <p class="auth-footer">Already have an account? <a href="{% url 'login' %}">Sign in</a></p>
+  </div>
 </div>
-{% endblock %}
+</body>
+</html>
