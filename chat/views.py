@@ -4,7 +4,7 @@ from diffusers import StableDiffusionPipeline
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from .models import Chat, Image
-from .forms import ImageForm
+from .forms import ImageForm, RegisterForm
 from io import BytesIO
 from django.core.files.base import ContentFile
 from PIL import Image as PILImage
@@ -120,14 +120,14 @@ from django.shortcuts import render, redirect
 
 def register(request):
     if request.method == 'POST':
-        form = UserCreationForm(request.POST)
+        form = RegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
             login(request, user)  # Automatically log in the user after registration
             Chat.objects.create(title="First_Chat", user=request.user)
             return redirect('dashboard')
     else:
-        form = UserCreationForm()
+        form = RegisterForm()
     return render(request, 'register.html', {'form': form})
 
 def logout_view(request):
