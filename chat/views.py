@@ -3,6 +3,7 @@ from torch import autocast
 from diffusers import StableDiffusionPipeline
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from .models import Chat, Image
 from .forms import ImageForm
 from io import BytesIO
@@ -29,30 +30,33 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 @login_required
 def dashboard(request):
-    return redirect('chat_detail', chat_id='none')
+    return redirect('chat_home')
+
+
+@login_required
+def chat_home(request):
+    """Landing page: sidebar + 'create your first chat' prompt."""
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()[:100]
+        if title:
+            new_chat = Chat.objects.create(title=title, user=request.user)
+            return redirect('chat_detail', chat_id=new_chat.id)
+    chaters = Chat.objects.filter(user=request.user).order_by('-created_at')
+    return render(request, 'chat_detail1.html', {'chaters': chaters, 'nope': "nope"})
+
 
 @login_required
 def chat_detail(request, chat_id):
-    if(chat_id == 'none'):
-        if request.method == 'POST':
-          title = request.POST.get('title')
-          if title:
-            Chat.objects.create(title=title, user=request.user)
-            print(11)
-            return redirect('chat_detail', chat_id=title)
-        return render(request, 'chat_detail1.html', {'chaters': Chat.objects.filter(user=request.user), 'nope': "nope"})
-    
-    chat = get_object_or_404(Chat, title=chat_id, user=request.user)
-    images = chat.images.all()
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    images = chat.images.order_by('created_at')
     form = ImageForm()
-    chaters = Chat.objects.filter(user=request.user) 
+    chaters = Chat.objects.filter(user=request.user).order_by('-created_at')
 
     if request.method == 'POST':
-        title = request.POST.get('title')
+        title = request.POST.get('title', '').strip()[:100]
         if title:
-            Chat.objects.create(title=title, user=request.user)
-            print(11)
-            return redirect('chat_detail', chat_id=title)
+            new_chat = Chat.objects.create(title=title, user=request.user)
+            return redirect('chat_detail', chat_id=new_chat.id)
         form = ImageForm(request.POST, request.FILES)
         if form.is_valid():
             # Generate image using Stable Diffusion
@@ -95,16 +99,6 @@ def chat_detail(request, chat_id):
 
             
 
-            if chat.images.count() >= 4:
-            # Get the oldest image based on `created_at`
-                 oldest_image = chat.images.order_by('created_at').first()
-
-                 # Ensure the file exists and delete it from the filesystem
-                 if oldest_image.image:
-                          delete_file(oldest_image.image.path)
-    
-                   # Delete the record from the database
-                 oldest_image.delete()
 
 
             new_image = Image(chat=chat, prompt=prompt)
@@ -134,3 +128,29 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+
+@login_required
+@require_POST
+def rename_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    title = request.POST.get('title', '').strip()[:100]
+    if title:
+        chat.title = title
+        chat.save(update_fields=['title'])
+    return redirect('chat_detail', chat_id=chat.id)
+
+
+@login_required
+@require_POST
+def delete_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    chat.delete()  # images cascade; files are removed by the post_delete signal
+    return redirect('chat_home')
+
+
+@login_required
+@require_POST
+def clear_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    chat.images.all().delete()
+    return redirect('chat_detail', chat_id=chat.id)

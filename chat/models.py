@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 class Chat(models.Model):
     title = models.CharField(max_length=100)
@@ -20,3 +22,12 @@ class Image(models.Model):
 
     def __str__(self):
         return f"Image for Chat {self.chat.title}"
+
+
+@receiver(post_delete, sender=Image)
+def delete_image_files(sender, instance, **kwargs):
+    """Remove the image files from disk when an Image row is deleted
+    (directly, via 'clear chat', or via cascade when a chat is deleted)."""
+    for field_file in (instance.image, instance.input_image):
+        if field_file:
+            field_file.delete(save=False)
