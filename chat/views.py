@@ -12,7 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import FileResponse
 from .models import Chat, Image
-from .forms import ImageForm
+from .forms import ImageForm, RegisterForm
 from io import BytesIO
 from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 from django.contrib import messages
@@ -309,6 +309,8 @@ from django.contrib.auth import login
 from django.shortcuts import render, redirect
 
 def register(request):
+    if request.method == 'POST':
+        form = RegisterForm(request.POST)
     if request.method == "POST":
         form = UserCreationForm(request.POST)
         if form.is_valid():
@@ -323,6 +325,8 @@ def register(request):
                 login(request, user)
                 return redirect("dashboard")
     else:
+        form = RegisterForm()
+    return render(request, 'register.html', {'form': form})
         form = UserCreationForm()
     return render(request, "register.html", {"form": form})
 

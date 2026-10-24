@@ -3,16 +3,22 @@
 {% block content %}
 <div class="login-container">
     <h2>Login</h2>
+
+    {% if form.non_field_errors %}
+    <div class="form-error" role="alert">
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+    {% endif %}
+
     <form method="post">
         {% csrf_token %}
-        <div>
-            <label for="username">Username:</label>
-            <input type="text" name="username" id="username" required>
+        {% for field in form %}
+        <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }} <span aria-hidden="true">*</span></label>
+            {{ field }}
+            {% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
         </div>
-        <div>
-            <label for="password">Password:</label>
-            <input type="password" name="password" id="password" required>
-        </div>
+        {% endfor %}
         <button type="submit" class="login-button">Login</button>
     </form>
     <p>Don't have an account? <a href="{% url 'register' %}">Register here</a></p>
