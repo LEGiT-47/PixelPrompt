@@ -1,0 +1,7 @@
+Django>=5.1,<5.2
+accelerate>=1.0,<2
+diffusers>=0.41,<0.42
+Pillow>=12.3,<13
+torch==2.14.1
+transformers>=5.0,<6
+torchvision==0.29.1
