@@ -9,6 +9,7 @@ from torch import autocast
 from diffusers import StableDiffusionPipeline
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.http import FileResponse
 from .models import Chat, Image
 from .forms import ImageForm
@@ -109,11 +110,84 @@ def _generation_failure(request, chat, form, chaters, database_failure=False):
 
 @login_required
 def dashboard(request):
+    return redirect('chat_home')
+
+
+@login_required
+def chat_home(request):
+    """Landing page: sidebar + 'create your first chat' prompt."""
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()[:100]
+        if title:
+            new_chat = Chat.objects.create(title=title, user=request.user)
+            return redirect('chat_detail', chat_id=new_chat.id)
+    chaters = Chat.objects.filter(user=request.user).order_by('-created_at')
+    return render(request, 'chat_detail1.html', {'chaters': chaters, 'nope': "nope"})
     return redirect("chat_detail", chat_id="none")
 
 
 @login_required
 def chat_detail(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    images = chat.images.order_by('created_at')
+    form = ImageForm()
+    chaters = Chat.objects.filter(user=request.user).order_by('-created_at')
+
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()[:100]
+        if title:
+            new_chat = Chat.objects.create(title=title, user=request.user)
+            return redirect('chat_detail', chat_id=new_chat.id)
+        form = ImageForm(request.POST, request.FILES)
+        if form.is_valid():
+            # Generate image using Stable Diffusion
+            prompt = form.cleaned_data['prompt']
+            input_image = form.cleaned_data.get('input_image')
+            print(input_image)
+            strength = 0.75
+            print(2)
+            with autocast(device):
+               if input_image:  # Check if an input image is provided
+                  # Load the input image
+                  print(1)
+                  input_image = PILImage.open(input_image).convert("RGB")
+                  preprocess = transforms.Compose([
+                  transforms.Resize((512, 512)),  # Match the Stable Diffusion resolution
+                  transforms.ToTensor(),
+                  transforms.Normalize([0.5], [0.5]),  # Normalize to [-1, 1]
+                  ])
+                  input_tensor = preprocess(input_image).unsqueeze(0).to(device)
+                  pipe1 = StableDiffusionImg2ImgPipeline.from_pretrained(
+                      model_id,
+                      torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                     
+                    )
+                  pipe1.to(device)
+                  generated_image = pipe1(prompt=prompt, image=input_tensor, strength=strength, guidance_scale=8.5)["images"][0]
+               else:
+                   pipe = StableDiffusionPipeline.from_pretrained(
+                     model_id,
+                     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    
+                 )
+                   pipe.to(device)
+                   generated_image = pipe(prompt, guidance_scale=8.5)["images"][0]
+
+            # Convert PIL image to an in-memory file
+            image_buffer = BytesIO()
+            generated_image.save(image_buffer, format="PNG")
+            image_buffer.seek(0)
+
+            
+
+
+
+            new_image = Image(chat=chat, prompt=prompt)
+            new_image.image.save(f"{request.user}_{chat.title}_{prompt}.png", ContentFile(image_buffer.read()), save=True)
+            new_image.save()
+            return redirect('chat_detail', chat_id=chat_id)
+
+    return render(request, 'chat_detail1.html', {'chat': chat, 'images': images, 'form': form, 'chaters': chaters})
     if chat_id == "none":
         if request.method == "POST":
             title = request.POST.get("title")
@@ -258,3 +332,29 @@ def logout_view(request):
     logout(request)
     return redirect("login")
 
+
+@login_required
+@require_POST
+def rename_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    title = request.POST.get('title', '').strip()[:100]
+    if title:
+        chat.title = title
+        chat.save(update_fields=['title'])
+    return redirect('chat_detail', chat_id=chat.id)
+
+
+@login_required
+@require_POST
+def delete_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    chat.delete()  # images cascade; files are removed by the post_delete signal
+    return redirect('chat_home')
+
+
+@login_required
+@require_POST
+def clear_chat(request, chat_id):
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    chat.images.all().delete()
+    return redirect('chat_detail', chat_id=chat.id)
