@@ -3,6 +3,16 @@ from io import BytesIO
 from uuid import uuid4
 
 import torch
+import mimetypes
+from pathlib import Path
+from torch import autocast
+from diffusers import StableDiffusionPipeline
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.http import FileResponse
+from .models import Chat, Image
+from .forms import ImageForm
+from io import BytesIO
 from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -15,6 +25,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from PIL import Image as PILImage
 from torch import autocast
 from torchvision import transforms
+from diffusers import StableDiffusionImg2ImgPipeline
+from django.core.files.storage import default_storage
+from django.views.decorators.http import require_GET, require_POST
 
 from .forms import ImageForm
 from .models import Chat, Image
@@ -201,6 +214,26 @@ def chat_detail(request, chat_id):
     return render(request, "chat_detail1.html", _chat_context(chat, form, chaters))
 
 
+@login_required
+@require_GET
+def image_file(request, image_id, download=False):
+    image = get_object_or_404(
+        Image.objects.select_related('chat'),
+        pk=image_id,
+        chat__user=request.user,
+    )
+    content_type = mimetypes.guess_type(image.image.name)[0] or 'application/octet-stream'
+    return FileResponse(
+        image.image.open('rb'),
+        as_attachment=download,
+        filename=Path(image.image.name).name,
+        content_type=content_type,
+    )
+
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login
+from django.shortcuts import render, redirect
+
 def register(request):
     if request.method == "POST":
         form = UserCreationForm(request.POST)
@@ -220,6 +253,7 @@ def register(request):
     return render(request, "register.html", {"form": form})
 
 
+@require_POST
 def logout_view(request):
     logout(request)
     return redirect("login")
