@@ -11,6 +11,16 @@
     </head> 
     <body>
         <div id="webcrumbs">
+            {% if messages %}
+            <div class="fixed top-4 right-4 z-50 space-y-2" aria-live="polite">
+                {% for message in messages %}
+                <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800 shadow" role="alert">
+                    <p>{{ message }}</p>
+                    {% if message.tags == 'error' %}<p class="mt-1 text-sm">Please try again.</p>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
             
             <div
                 data-id="m_tv"
@@ -75,22 +85,44 @@
                         </script>
                     </div>
                     <div data-id="FSHh" class="space-y-2 mb-6">
+                        <style>
+    .chat-row { position: relative; }
+    .chat-menu summary { list-style: none; cursor: pointer; color: #fff; padding: 0 8px; font-size: 20px; line-height: 1; }
+    .chat-menu summary::-webkit-details-marker { display: none; }
+    .chat-menu-panel { position: absolute; right: 0; top: 100%; z-index: 30; width: 210px; padding: 8px;
+                       background: #262626; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+    .chat-menu-panel form { margin-bottom: 6px; }
+    .chat-menu-panel input[type=text] { width: 100%; padding: 4px 8px; margin-bottom: 4px; border-radius: 6px;
+                                         background: #404040; color: #fff; border: 1px solid #525252; }
+    .chat-menu-panel button { width: 100%; text-align: left; padding: 4px 8px; border-radius: 6px; color: #fff; background: transparent; }
+    .chat-menu-panel button:hover { background: #404040; }
+</style>
                         {% for chat in chaters %}
-                        <a href="{% url 'chat_detail' chat.title %}"
-                            data-id="GHkA"
-                            class="px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 cursor-pointer transition duration-200 flex items-center justify-between group"
-                        >
-                            <div data-id="wkaQ" class="flex items-center">
-                                <span data-id="0nWc" class="material-symbols-outlined text-white mr-2">image</span>
-                                <span data-id="IUZO" class="text-white font-medium">{{ chat.title }}</span>
-                            </div>
-                            <span
-                                data-id="wLJh"
-                                class="text-xs text-primary-300 opacity-0 group-hover:opacity-100 transition duration-200"
-                            >{{ chat.created_at|timesince|split:","|slice:":1"|join:" " }}
-</span>
-                            
-                        </a>
+                        <div class="chat-row px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 transition duration-200 flex items-center justify-between group">
+                            <a href="{% url 'chat_detail' chat.id %}" class="flex items-center flex-1" style="min-width:0; text-decoration:none;">
+                                <span class="material-symbols-outlined text-white mr-2">image</span>
+                                <span class="text-white font-medium" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ chat.title }}</span>
+                                <span class="text-xs text-primary-300 opacity-0 group-hover:opacity-100 transition duration-200 ml-2">{{ chat.created_at|timesince|split:","|slice:":1"|join:" " }}</span>
+                            </a>
+                            <details class="chat-menu">
+                                <summary aria-label="Chat options">&#8942;</summary>
+                                <div class="chat-menu-panel">
+                                    <form method="post" action="{% url 'rename_chat' chat.id %}" onsubmit="var n = prompt('New name for this chat:', this.elements['title'].value); if (n === null || !n.trim()) { return false; } this.elements['title'].value = n.trim(); return true;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="title" value="{{ chat.title }}">
+                                        <button type="submit">Rename</button>
+                                    </form>
+                                    <form method="post" action="{% url 'clear_chat' chat.id %}" onsubmit="return confirm('Remove all images from this chat?');">
+                                        {% csrf_token %}
+                                        <button type="submit">Clear Chat</button>
+                                    </form>
+                                    <form method="post" action="{% url 'delete_chat' chat.id %}" onsubmit="return confirm('Delete this chat permanently?');">
+                                        {% csrf_token %}
+                                        <button type="submit">Delete</button>
+                                    </form>
+                                </div>
+                            </details>
+                        </div>
                         {% endfor %}
                     </div>
                     <div data-id="dj5s" class="mt-auto">
@@ -106,9 +138,12 @@
                                 <span data-id="r8XW" class="text-white font-medium">{{ user.username|slice:":1" }}</span>
                             </div>
                             <span data-id="biwZ" class="text-neutral-300">{{ user.username }}</span>
-                            <a href="{% url 'logout' %}" class="ml-auto text-neutral-300 hover:text-white">
+                            <form method="post" action="{% url 'logout' %}" class="ml-auto">
+                                {% csrf_token %}
+                                <button type="submit" class="text-neutral-300 hover:text-white">
                                 <span class="material-symbols-outlined">logout</span>
-                            </a>
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -190,10 +225,10 @@
                                     <div data-id="w6Y1" class="bg-primary-100 px-4 py-3 rounded-xl rounded-tr-none max-w-[80%]" style=" max-width:350px;">
                                        {% comment %} <p>Here is the image :</p> {% endcomment %}
                                         <div>
-                                            <img src="{{ image.image.url }}" alt="Generated Image" style="margin:5px;" onload="hideLoading()">
+                                            <img src="{% url 'image_file' image.id %}" alt="Generated Image" style="margin:5px;" onload="hideLoading()">
                                         </div>
                                         <div data-id="z9dt" class="flex justify-end mt-2 space-x-2">
-                                            <a href="{{ image.image.url }}" download class="rounded hover:bg-neutral-200 transition duration-200">
+                                            <a href="{% url 'image_download' image.id %}" class="rounded hover:bg-neutral-200 transition duration-200">
                                                 <span data-id="buRQ" class="material-symbols-outlined text-neutral-500">download</span>
                                             </a>
                                             <button data-id="bz-Z" class="rounded hover:bg-neutral-200 transition duration-200">
@@ -263,6 +298,15 @@
                     <div data-id="8oo-" class="p-4 border-t border-neutral-200 bg-white">
                         <form method="POST" enctype="multipart/form-data">
                             {% csrf_token %}
+                            {% if form.errors %}
+                            <div class="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+                                <p class="font-semibold">Please correct the following before generating your image:</p>
+                                {% for field in form %}
+                                    {% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}
+                                {% endfor %}
+                                {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+                            </div>
+                            {% endif %}
                             <div data-id="4mE9" class="flex items-center space-x-2 mb-2">
                                 <!-- Camera Button -->
                                 <button
@@ -283,6 +327,9 @@
                                 name="input_image"
                                 
                             />
+                            {% for error in form.input_image.errors %}
+                            <p class="mt-1 text-sm text-red-700" role="alert">{{ error }}</p>
+                            {% endfor %}
                     
                             <!-- Image Preview -->
                             <div id="imagePreviewContainer" class="mt-2" style="display: none;">
@@ -297,7 +344,10 @@
                                     placeholder="Describe the image you want to generate...
                     Try: 'Fantasy landscape with dragons and waterfalls', 'Cyberpunk city at night'"
                                     class="w-full p-4 pr-20 rounded-xl border border-neutral-300 focus:border-primary-500 focus:ring focus:ring-primary-200 resize-none h-24 transition duration-200"
-                                ></textarea>
+                                >{{ form.prompt.value|default_if_none:"" }}</textarea>
+                                {% for error in form.prompt.errors %}
+                                <p class="mt-1 text-sm text-red-700" role="alert">{{ error }}</p>
+                                {% endfor %}
                                 <button
                                     type="submit"
                                     data-id="t00h"
@@ -411,5 +461,6 @@
             }
         </script>
         
+    
     </body>
 </html>

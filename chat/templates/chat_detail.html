@@ -10,7 +10,7 @@
     <div class="images">
         {% for image in images %}
         <div class="image">
-            <img src="{{ image.image.url }}" alt="Generated Image">
+            <img src="{% url 'image_file' image.id %}" alt="Generated Image">
             <p>Prompt: {{ image.prompt }}</p>
         </div>
         {% endfor %}
