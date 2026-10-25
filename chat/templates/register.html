@@ -1,40 +1,32 @@
-{% extends 'base.html' %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create account — PixelPrompt</title>
+  <link rel="stylesheet" href="{% static 'chat/styles.css' %}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
 
-{% block content %}
-<div class="register-container">
-    <h2>Register</h2>
-
-    {% if form.non_field_errors %}
-    <div class="form-error" role="alert">
-        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+    <div class="auth-logo">
+      <span class="auth-logo-dot"></span>
+      <span class="auth-logo-name">PixelPrompt</span>
     </div>
-    {% endif %}
+
+    <h1 class="auth-heading">Create your account</h1>
+    <p class="auth-sub">Start generating images in seconds.</p>
 
     <form method="post">
-        {% csrf_token %}
-        {% for field in form %}
-        <div class="field">
-            <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
-            {{ field }}
-            {% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
-            {% if field.help_text %}<small class="help-text">{{ field.help_text|safe }}</small>{% endif %}
-        </div>
-        {% endfor %}
-        <button type="submit" class="register-button">Register</button>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn-auth">Create account</button>
     </form>
-    <p>Already have an account? <a href="{% url 'login' %}">Login here</a></p>
-</div>
 
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    var p1 = document.getElementById("id_password1");
-    var p2 = document.getElementById("id_password2");
-    if (!p1 || !p2) return;
-    function check() {
-        p2.setCustomValidity(p2.value && p1.value !== p2.value ? "Passwords do not match." : "");
-    }
-    p1.addEventListener("input", check);
-    p2.addEventListener("input", check);
-});
-</script>
-{% endblock %}
+    <p class="auth-footer">Already have an account? <a href="{% url 'login' %}">Sign in</a></p>
+  </div>
+</div>
+</body>
+</html>
