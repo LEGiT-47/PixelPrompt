@@ -6,7 +6,9 @@ PixelPrompt is a Django application that generates images with Stable Diffusion.
 
 - Python 3.10 or newer
 - A CPU or CUDA-capable PyTorch installation
-- A Hugging Face account/token may be needed to download the configured model
+- The Stable Diffusion 1.5 model is downloaded the first time an image is generated
+- Hugging Face access may be required for the configured model; accept its model terms and set `HF_TOKEN` if prompted
+- CPU generation works but can be very slow; a supported CUDA GPU is recommended
 
 `torch` and `torchvision` must remain on the matching versions listed in
 `requirements.txt`. The default installation uses the packages available from
@@ -60,6 +62,8 @@ Configure Django. `DJANGO_SECRET_KEY` is required when debug is disabled;
 $env:DJANGO_DEBUG = "true"
 $env:DJANGO_SECRET_KEY = "development-only-change-me"
 $env:DJANGO_ALLOWED_HOSTS = "localhost,127.0.0.1"
+# Optional: set this if Hugging Face requires authentication for the model
+$env:HF_TOKEN = "hf_your_token"
 ```
 
 On macOS or Linux, use:
@@ -68,6 +72,8 @@ On macOS or Linux, use:
 export DJANGO_DEBUG=true
 export DJANGO_SECRET_KEY=development-only-change-me
 export DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+# Optional: set this if Hugging Face requires authentication for the model
+export HF_TOKEN=hf_your_token
 ```
 
 Apply migrations and start the development server:

@@ -19,9 +19,22 @@
     <h1 class="auth-heading">Create your account</h1>
     <p class="auth-sub">Start generating images in seconds.</p>
 
+    {% if messages %}
+    <div class="auth-notices" aria-live="polite">
+      {% for message in messages %}<p class="auth-error" role="status">{{ message }}</p>{% endfor %}
+    </div>
+    {% endif %}
+
     <form method="post">
       {% csrf_token %}
-      {{ form.as_p }}
+      {% for error in form.non_field_errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+      {% for field in form %}
+      <div class="auth-field">
+        <label class="auth-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+      </div>
+      {% endfor %}
       <button type="submit" class="btn-auth">Create account</button>
     </form>
 
