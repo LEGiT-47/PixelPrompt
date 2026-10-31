@@ -37,12 +37,36 @@
 
     <div class="chat-list">
       {% for c in chaters %}
-      <a href="{% url 'chat_detail' c.title %}"
-         class="chat-item {% if chat and chat.title == c.title %}active{% endif %}">
-        <span class="material-symbols-outlined chat-item-icon">image</span>
-        <span class="chat-item-title">{{ c.title }}</span>
-        <span class="chat-item-age">{{ c.created_at|timesince|split:","|slice:":1"|join:" " }} ago</span>
-      </a>
+      <div class="chat-row">
+        <a href="{% url 'chat_detail' c.title %}"
+           class="chat-item {% if chat and chat.pk == c.pk %}active{% endif %}">
+          <span class="material-symbols-outlined chat-item-icon">image</span>
+          <span class="chat-item-title">{{ c.title }}</span>
+          <span class="chat-item-age">{{ c.created_at|timesince|split:","|slice:":1"|join:" " }} ago</span>
+        </a>
+        <details class="chat-actions">
+          <summary aria-label="Manage {{ c.title }}" title="Manage chat">
+            <span class="material-symbols-outlined">more_vert</span>
+          </summary>
+          <div class="chat-actions-menu">
+            <button type="button" class="chat-action-rename"
+                    data-title="{{ c.title }}"
+                    data-url="{% url 'rename_chat' c.pk %}">
+              <span class="material-symbols-outlined">edit</span> Rename
+            </button>
+            <form method="POST" action="{% url 'clear_chat' c.pk %}"
+                  onsubmit="return confirm('Clear all images from this chat?')">
+              {% csrf_token %}
+              <button type="submit"><span class="material-symbols-outlined">delete_sweep</span> Clear history</button>
+            </form>
+            <form method="POST" action="{% url 'delete_chat' c.pk %}"
+                  onsubmit="return confirm('Delete this chat and all its images? This cannot be undone.')">
+              {% csrf_token %}
+              <button type="submit" class="danger"><span class="material-symbols-outlined">delete</span> Delete chat</button>
+            </form>
+          </div>
+        </details>
+      </div>
       {% empty %}
       <div class="chat-list-empty">
         <span class="material-symbols-outlined">chat_bubble_outline</span>
@@ -55,15 +79,26 @@
       <div class="user-chip">
         <div class="user-avatar">{{ user.username|slice:":1"|upper }}</div>
         <span class="user-name">{{ user.username }}</span>
-        <a href="{% url 'logout' %}" class="btn-logout" aria-label="Log out" title="Log out">
-          <span class="material-symbols-outlined">logout</span>
-        </a>
+        <form method="POST" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-logout" aria-label="Log out" title="Log out">
+            <span class="material-symbols-outlined">logout</span>
+          </button>
+        </form>
       </div>
     </div>
   </aside>
 
   <!-- ── Main ────────────────────────────────────────────── -->
   <main class="main">
+
+    {% if messages %}
+    <div class="notice-stack" aria-live="polite">
+      {% for message in messages %}
+      <p class="notice {{ message.tags }}" role="status">{{ message }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     {% if nope %}
     <!-- Empty state: no chat selected -->
@@ -121,12 +156,18 @@
             <span class="material-symbols-outlined">auto_awesome</span>
           </div>
           <div class="msg-image-card">
-            <img src="{{ image.image.url }}" alt="Generated: {{ image.prompt }}" loading="lazy" />
+            <button type="button" class="image-viewer-trigger"
+                    data-image-url="{% url 'serve_image' image.pk %}"
+                    data-download-url="{% url 'serve_image' image.pk %}?download=1"
+                    data-prompt="{{ image.prompt }}"
+                    aria-label="View image: {{ image.prompt }}">
+              <img src="{% url 'serve_image' image.pk %}" alt="Generated: {{ image.prompt }}" loading="lazy" />
+            </button>
             <div class="msg-image-actions">
               <button class="img-action-btn" title="Copy prompt" onclick="copyPrompt('{{ image.prompt|escapejs }}', this)">
                 <span class="material-symbols-outlined">content_copy</span>
               </button>
-              <a href="{{ image.image.url }}" download class="img-action-btn" title="Download">
+              <a href="{% url 'serve_image' image.pk %}?download=1" class="img-action-btn" title="Download" aria-label="Download image">
                 <span class="material-symbols-outlined">download</span>
               </a>
               <button class="img-action-btn" title="Like" onclick="this.classList.toggle('liked')">
@@ -135,6 +176,13 @@
               <button class="img-action-btn" title="Star" onclick="this.classList.toggle('starred')">
                 <span class="material-symbols-outlined">star</span>
               </button>
+              <form method="POST" action="{% url 'delete_image' image.pk %}"
+                    onsubmit="return confirm('Delete this image? This cannot be undone.')">
+                {% csrf_token %}
+                <button type="submit" class="img-action-btn img-delete" title="Delete image" aria-label="Delete image">
+                  <span class="material-symbols-outlined">delete</span>
+                </button>
+              </form>
             </div>
           </div>
         </div>
@@ -150,6 +198,18 @@
 
     <!-- Input bar -->
     <div class="input-bar">
+      {% if generation_failed %}
+      <div class="operation-error" role="alert">
+        <strong>Image generation failed.</strong>
+        <p>We couldn't generate your image. Please try again.</p>
+        <button type="button" onclick="document.getElementById('promptForm')?.requestSubmit()">Try again</button>
+      </div>
+      {% elif save_failed %}
+      <div class="operation-error" role="alert">
+        <strong>Image couldn't be saved.</strong>
+        <p>Your generated image wasn't added to this chat. Please try again.</p>
+      </div>
+      {% endif %}
       <form method="POST" enctype="multipart/form-data" id="promptForm">
         {% csrf_token %}
 
@@ -175,11 +235,13 @@
             rows="1"
             placeholder="Describe the image you want to generate…"
             required
-          ></textarea>
-          <button type="submit" class="btn-send" id="sendBtn" title="Generate" onclick="showLoading()">
+          >{{ form.prompt.value|default_if_none:'' }}</textarea>
+          <button type="submit" class="btn-send" id="sendBtn" title="Generate">
             <span class="material-symbols-outlined">auto_awesome</span>
           </button>
         </div>
+        {% for error in form.prompt.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        {% for error in form.input_image.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
 
         <p class="input-hint">Press <kbd>Enter</kbd> to generate · <kbd>Shift+Enter</kbd> for new line</p>
 
@@ -200,7 +262,7 @@
 </div>
 
 <!-- New-chat modal -->
-<div class="modal-backdrop" id="modalBackdrop">
+<div class="modal-backdrop {% if chat_title_form.errors %}open{% endif %}" id="modalBackdrop">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-header">
       <span class="material-symbols-outlined modal-icon">add_circle</span>
@@ -215,9 +277,12 @@
         id="modalInput"
         class="modal-input"
         placeholder="e.g. Fantasy landscapes…"
+        maxlength="100"
+        value="{{ chat_title_form.title.value|default_if_none:'' }}"
         required
         autofocus
       />
+      {% for error in chat_title_form.title.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
       <div class="modal-actions">
         <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn-primary">
@@ -226,6 +291,43 @@
         </button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Rename-chat modal -->
+<div class="modal-backdrop" id="renameModalBackdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="renameModalTitle">
+    <div class="modal-header">
+      <span class="material-symbols-outlined modal-icon">edit</span>
+      <p class="modal-title" id="renameModalTitle">Rename chat</p>
+    </div>
+    <form method="POST" id="renameChatForm">
+      {% csrf_token %}
+      <label class="modal-label" for="renameChatTitle">Chat name</label>
+      <input type="text" name="title" id="renameChatTitle" class="modal-input" maxlength="100" required />
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" onclick="closeRenameModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Save name</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Full-size image viewer -->
+<div class="image-viewer" id="imageViewer" role="dialog" aria-modal="true" aria-label="Generated image viewer" hidden>
+  <div class="image-viewer-panel">
+    <div class="image-viewer-toolbar">
+      <p id="imageViewerPrompt"></p>
+      <div class="image-viewer-actions">
+        <a id="imageViewerDownload" class="img-action-btn" title="Download image" aria-label="Download image">
+          <span class="material-symbols-outlined">download</span>
+        </a>
+        <button type="button" class="img-action-btn" id="closeImageViewer" title="Close viewer" aria-label="Close viewer">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+    </div>
+    <img id="imageViewerImage" alt="" />
   </div>
 </div>
 
@@ -279,12 +381,13 @@
   }
 
   // ── Loading overlay ──
-  function showLoading() {
-    const ta = document.getElementById('promptTextarea');
-    if (!ta || !ta.value.trim()) return;
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) overlay.classList.add('active');
-  }
+  document.getElementById('promptForm')?.addEventListener('submit', event => {
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    if (document.getElementById('promptTextarea')?.value.trim()) {
+      document.getElementById('loadingOverlay')?.classList.add('active');
+    }
+  });
 
   // ── Copy prompt ──
   function copyPrompt(text, btn) {
@@ -312,8 +415,60 @@
   document.getElementById('modalBackdrop')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal();
   });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
+
+  // ── Conversation management ──
+  const renameBackdrop = document.getElementById('renameModalBackdrop');
+  const renameForm = document.getElementById('renameChatForm');
+  const renameTitle = document.getElementById('renameChatTitle');
+  document.querySelectorAll('.chat-action-rename').forEach(button => {
+    button.addEventListener('click', () => {
+      button.closest('details').open = false;
+      renameForm.action = button.dataset.url;
+      renameTitle.value = button.dataset.title;
+      renameBackdrop.classList.add('open');
+      renameTitle.focus();
+      renameTitle.select();
+    });
+  });
+  function closeRenameModal() {
+    renameBackdrop?.classList.remove('open');
+  }
+  renameBackdrop?.addEventListener('click', event => {
+    if (event.target === renameBackdrop) closeRenameModal();
+  });
+  // ── Full-size image viewer ──
+  const imageViewer = document.getElementById('imageViewer');
+  const viewerImage = document.getElementById('imageViewerImage');
+  const viewerPrompt = document.getElementById('imageViewerPrompt');
+  const viewerDownload = document.getElementById('imageViewerDownload');
+  let viewerReturnFocus = null;
+  document.querySelectorAll('.image-viewer-trigger').forEach(button => {
+    button.addEventListener('click', () => {
+      viewerReturnFocus = button;
+      viewerImage.src = button.dataset.imageUrl;
+      viewerImage.alt = `Generated image: ${button.dataset.prompt}`;
+      viewerPrompt.textContent = button.dataset.prompt;
+      viewerDownload.href = button.dataset.downloadUrl;
+      imageViewer.hidden = false;
+      document.getElementById('closeImageViewer').focus();
+    });
+  });
+  function closeImageViewer() {
+    if (!imageViewer || imageViewer.hidden) return;
+    imageViewer.hidden = true;
+    viewerImage.removeAttribute('src');
+    viewerReturnFocus?.focus();
+  }
+  document.getElementById('closeImageViewer')?.addEventListener('click', closeImageViewer);
+  imageViewer?.addEventListener('click', event => {
+    if (event.target === imageViewer) closeImageViewer();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeModal();
+      closeRenameModal();
+      closeImageViewer();
+    }
   });
 
   // ── Mobile sidebar ──

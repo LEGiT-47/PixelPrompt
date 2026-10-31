@@ -19,6 +19,16 @@ Try: &quot;Fantasy landscape with dragons and waterfalls&quot;, &quot;Cyberpunk 
         fields = ['prompt', 'input_image']
 
 
+class ChatTitleForm(forms.Form):
+    title = forms.CharField(max_length=100, strip=True)
+
+    def clean_title(self):
+        title = self.cleaned_data["title"]
+        if title.lower() == "none" or "/" in title:
+            raise forms.ValidationError("Choose a different chat name.")
+        return title
+
+
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(
         required=True,
@@ -28,6 +38,18 @@ class RegisterForm(UserCreationForm):
     class Meta(UserCreationForm.Meta):
         model = User
         fields = ("username", "email")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name, field in self.fields.items():
+            field.widget.attrs["class"] = "auth-input"
+            field.widget.attrs["required"] = "required"
+            if field_name == "username":
+                field.widget.attrs["autocomplete"] = "username"
+            elif field_name == "email":
+                field.widget.attrs["autocomplete"] = "email"
+            elif field_name in {"password1", "password2"}:
+                field.widget.attrs["autocomplete"] = "new-password"
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
@@ -45,8 +67,19 @@ class LoginForm(AuthenticationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["username"].widget.attrs.update(
-            {"autocomplete": "username", "autofocus": True, "placeholder": "Enter your username"}
+            {
+                "class": "auth-input",
+                "autocomplete": "username",
+                "autofocus": True,
+                "placeholder": "Enter your username",
+                "required": "required",
+            }
         )
         self.fields["password"].widget.attrs.update(
-            {"autocomplete": "current-password", "placeholder": "Enter your password"}
+            {
+                "class": "auth-input",
+                "autocomplete": "current-password",
+                "placeholder": "Enter your password",
+                "required": "required",
+            }
         )

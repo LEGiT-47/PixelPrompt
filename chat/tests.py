@@ -7,6 +7,7 @@ from django.core.files.storage import default_storage
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
+from .forms import RegisterForm
 from .models import Chat, Image
 
 
@@ -137,3 +138,68 @@ class ImagePrivacyAndManagementTests(TestCase):
 
 		self.assertEqual(csrf_client.get(logout_url).status_code, 405)
 		self.assertEqual(csrf_client.post(logout_url).status_code, 403)
+
+	def test_chat_shows_private_image_and_management_controls(self):
+		response = self.client.get(reverse("chat_detail", kwargs={"chat_id": self.chat.title}))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, self.image_url())
+		self.assertContains(response, self.delete_url())
+		self.assertNotContains(response, "/media/chat_images/")
+
+	def test_image_form_validation_is_visible(self):
+		response = self.client.post(
+			reverse("chat_detail", kwargs={"chat_id": self.chat.title}),
+			{"prompt": ""},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "This field is required.")
+
+	def test_owner_can_rename_chat(self):
+		response = self.client.post(
+			reverse("rename_chat", kwargs={"chat_id": self.chat.pk}),
+			{"title": "renamed-chat"},
+		)
+
+		self.chat.refresh_from_db()
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(self.chat.title, "renamed-chat")
+
+	def test_owner_can_clear_chat_history(self):
+		Image.objects.create(chat=self.chat, prompt="Second image", image="chat_images/second.png")
+
+		response = self.client.post(reverse("clear_chat", kwargs={"chat_id": self.chat.pk}))
+
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(self.chat.images.count(), 0)
+
+	def test_owner_can_delete_chat(self):
+		response = self.client.post(reverse("delete_chat", kwargs={"chat_id": self.chat.pk}))
+
+		self.assertEqual(response.status_code, 302)
+		self.assertFalse(Chat.objects.filter(pk=self.chat.pk).exists())
+
+	def test_other_user_cannot_manage_chat(self):
+		self.client.force_login(self.other_user)
+		chat_actions = ("rename_chat", "clear_chat", "delete_chat")
+
+		for action in chat_actions:
+			with self.subTest(action=action):
+				response = self.client.post(reverse(action, kwargs={"chat_id": self.chat.pk}), {"title": "stolen"})
+				self.assertEqual(response.status_code, 404)
+
+		self.assertTrue(Chat.objects.filter(pk=self.chat.pk, user=self.owner).exists())
+
+	def test_registration_form_validates_email_and_duplicate_addresses(self):
+		self.owner.email = "owner@example.test"
+		self.owner.save(update_fields=["email"])
+		form = RegisterForm(data={
+			"username": "new-user",
+			"email": "OWNER@example.test",
+			"password1": "B1ue!River#43",
+			"password2": "B1ue!River#43",
+		})
+
+		self.assertFalse(form.is_valid())
+		self.assertIn("email", form.errors)
